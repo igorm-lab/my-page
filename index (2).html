@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wordle</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --green: #538d4e;
+    --yellow: #b59f3b;
+    --gray: #3a3a3c;
+    --tile-empty: #121213;
+    --tile-border: #3a3a3c;
+    --tile-filled-border: #565758;
+    --bg: #121213;
+    --header-border: #3a3a3c;
+    --text: #ffffff;
+    --key-bg: #818384;
+    --key-text: #ffffff;
+    --toaster-bg: #ffffff;
+    --toaster-text: #000000;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Clear Sans', 'Helvetica Neue', Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  header {
+    width: 100%;
+    max-width: 500px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-bottom: 1px solid var(--header-border);
+    padding: 12px 0;
+    position: relative;
+  }
+
+  header h1 {
+    font-size: 1.8rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  #toaster {
+    position: fixed;
+    top: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    pointer-events: none;
+  }
+
+  .toast {
+    background: var(--toaster-bg);
+    color: var(--toaster-text);
+    padding: 12px 20px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 700;
+    opacity: 1;
+    transition: opacity 0.4s;
+  }
+
+  .toast.fade { opacity: 0; }
+
+  #game {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 0;
+    flex: 1;
+    width: 100%;
+  }
+
+  #board {
+    display: grid;
+    grid-template-rows: repeat(6, 1fr);
+    gap: 5px;
+    width: min(350px, calc(100vw - 40px));
+    height: min(420px, calc((100vw - 40px) * 1.2));
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 5px;
+  }
+
+  .tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(1.4rem, 5vw, 2rem);
+    font-weight: 700;
+    text-transform: uppercase;
+    border: 2px solid var(--tile-border);
+    border-radius: 8px;
+    background: var(--tile-empty);
+    color: var(--text);
+    user-select: none;
+    transition: border-color 0.05s;
+    perspective: 250px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04);
+  }
+
+  .tile.filled {
+    border-color: var(--tile-filled-border);
+    animation: pop 0.1s ease-in-out;
+  }
+
+  .tile.reveal {
+    animation: flip 0.5s ease forwards;
+  }
+
+  .tile[data-state="correct"] { --face-color: var(--green); }
+  .tile[data-state="present"] { --face-color: var(--yellow); }
+  .tile[data-state="absent"]  { --face-color: var(--gray); }
+
+  @keyframes pop {
+    0%   { transform: scale(1); }
+    50%  { transform: scale(1.12); }
+    100% { transform: scale(1); }
+  }
+
+  @keyframes flip {
+    0%   { transform: rotateX(0deg); background: var(--tile-empty); border-color: var(--tile-filled-border); border-radius: 8px; }
+    49%  { transform: rotateX(-90deg); background: var(--tile-empty); border-color: var(--tile-filled-border); border-radius: 8px; }
+    50%  { transform: rotateX(-90deg); background: var(--face-color); border-color: var(--face-color); border-radius: 8px; }
+    100% { transform: rotateX(0deg); background: var(--face-color); border-color: var(--face-color); border-radius: 8px; }
+  }
+
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20%       { transform: translateX(-6px); }
+    40%       { transform: translateX(6px); }
+    60%       { transform: translateX(-4px); }
+    80%       { transform: translateX(4px); }
+  }
+
+  .row.shake { animation: shake 0.5s ease; }
+
+  @keyframes bounce {
+    0%, 20%  { transform: translateY(0); }
+    40%      { transform: translateY(-20px); }
+    50%      { transform: translateY(5px); }
+    60%      { transform: translateY(-10px); }
+    80%      { transform: translateY(2px); }
+    100%     { transform: translateY(0); }
+  }
+
+  .tile.bounce { animation: bounce 0.8s ease forwards; }
+
+  #keyboard {
+    width: min(500px, 100vw - 16px);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-bottom: 16px;
+  }
+
+  .kb-row {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .key {
+    height: 58px;
+    min-width: 43px;
+    flex: 1;
+    max-width: 43px;
+    border: 2px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    background: var(--key-bg);
+    color: var(--key-text);
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    transition: background 0.2s, color 0.2s;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08);
+  }
+
+  .key.wide { max-width: 65px; font-size: 0.75rem; letter-spacing: 0.03em; }
+
+  .key[data-state="correct"] { background: var(--green); }
+  .key[data-state="present"] { background: var(--yellow); }
+  .key[data-state="absent"]  { background: var(--gray); }
+
+  #overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #overlay.show { display: flex; }
+
+  #modal {
+    background: #1a1a1b;
+    border: 1px solid #3a3a3c;
+    border-radius: 12px;
+    padding: 32px 40px;
+    text-align: center;
+    max-width: 340px;
+    width: 90%;
+  }
+
+  #modal h2 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  #modal p {
+    font-size: 1rem;
+    color: #818384;
+    margin-bottom: 8px;
+  }
+
+  #modal .answer-reveal {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    color: #ffffff;
+    text-transform: uppercase;
+    margin: 16px 0 24px;
+    padding: 12px 20px;
+    background: var(--gray);
+    border-radius: 6px;
+    display: inline-block;
+  }
+
+  #play-again {
+    background: var(--green);
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    padding: 14px 32px;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+
+  #play-again:hover  { background: #6aaf64; }
+  #play-again:active { transform: scale(0.97); }
+
+  @media (max-height: 680px) {
+    #board { height: min(300px, calc((100vw - 40px) * 0.86)); }
+    .key   { height: 46px; }
+    header { padding: 8px 0; }
+    header h1 { font-size: 1.4rem; }
+    #game  { gap: 8px; padding: 8px 0; }
+  }
+</style>
+</head>
+<body>
+
+<header><h1>Wordle</h1></header>
+
+<div id="toaster"></div>
+
+<div id="game">
+  <div id="board"></div>
+  <div id="keyboard"></div>
+</div>
+
+<div id="overlay">
+  <div id="modal">
+    <h2 id="modal-title"></h2>
+    <p id="modal-msg"></p>
+    <div class="answer-reveal" id="modal-answer"></div>
+    <button id="play-again">Play Again</button>
+  </div>
+</div>
+
+<script>
+const WORDS = "aback abase abash abate abbey abbot abhor abide abyss acute affix afoot again agile aging agony agora agile aided alien align allay aloft alone along aloof aloud aloft altar amble amend amiss ample amuse angel anger angle angry anime anime annex annoy antic anvil aorta apple apply apron aptly arbor ardor argon array aside askew atoll atone attic audio audit augur avail avant avian avid awe awoke axial azure badge badly barge basis batch bathe batty bayou beach beady beard beast beech begin being below bends bereave berth beset bevel bidet bilge binge birch birth bison bland blank blast bleat bleed blend bless blest blimp blink bliss bloat bloke blond blood bloom blown blunt blurb blurt board boast bogus boost booth booze bough braid brand brave brawn braze break breed briar brine brine brink briny brisk broom broil brook broth brows brunt brunt buddy budge bulge bumph bunny buxom bylaw cache cadge camel cameo carve caste catch caulk cedar chalk chafe champ chant chaos chasm chase chasm chide chive chord chose civic civil clack claim clamp clang clank clash clasp clave clean clear cleat cleft clerk click cliff cloak clock clone close cloth clove clown clump clutch cobra cohere comet comic conch coral coupe craft cramp crash crave crawl craze creak creek creep crime crimp crisp cross crouch crowd crown cruel crumb crush crust crypt crypt cults curly curry cycle cynic daisy daunt debut decal decay delve depot depot depth derby derby deter ditch ditzy divan dizzy djinn dodge dodgy doing dolce dough dowel dowry drank drape drawl dread dregs dribs drink drive drool droop drove drown druid dryer duchy dusky duvet dwarf dwelt eagle eaglet easel ebony edict edify elbow elder emcee emote empty enact envoy epoch erase erase erupt essay ethic etude evade event every evoke exact exalt exert exile exert fable facet farce fatal fault feast feral ferret ferry fetch fewer fibre ficus fiend fifty fight filth finch flair flare flash flask flaunt flaw fleck flesh flick flier fling flint flock flour flout flown fluke flunk flute flyby focus foray forge forte foyer frail franc fraud freak freed friar fringe fritz froth froze frugal fungi funky gaily gains gamma gamut gaudy gauge gaunt gavel gawky giddy gimpy given gizmo glade glare glean glide glyph gnash going goose grace grade grasp grate graze greed greet grief grime gripe groan groin grope grout growl gruel gruff guile guise gulch gusto gypsy habit hairy haunt haven havoc hazel heady heave hefty heist hence herbs heron hilly hippo hitch hoary hoist holly homer hopeful horns horse humph husky hutch hyena hyper idiot igloo imply inept inert infer inner input inter interp irked irate ivory jaunt jazzy jelly jiffy joust joystick jumpy karate kayak knack knead kneel knelt knife knock knoll known kudos lance lapse laser latch latte launch lavish leapt least legal lilac limbo linen liner lingo liner lithe lived llama local locus lodge lowly lowly lucid lumpy lusty lying lymph lyric macaw macro magic mango mania maple march masse matte maxim mealy meant melee mercy merit messy metal mirth miser mitre mixed mocha moody moose moult mount mourn moved movie muddy mulch multi mural murky musty myrrh nasal nasty naval nifty ninth ninety nitwit noble niche notch novel nymph oaken occur ochre octet olive onset opaque orbit other other otter outdo outer outgo ovoid oxide parch parka pasty patch patsy pause penal peppy perky pesky petal phial phony piano picky piggy pilot pinch piney pipit pitch pithy pixel pizza plaid plait plank plant plaza plead pleat plied plop plumb plume plunk poach poker ponce porch posse pouty prawn preen press prick primp privy prize probe probe proce prune psalm pudgy pulpy pulse punch purge pygmy qualm quart quash query quest queue quick quill quirk quota quote rabbi rainy rally rangy raspy ratio ratty reach ready realm rebus recap recur reedy reek renew repay repel repel rerun reset retro revel revue rigor risky ritzy rocky rouge rough round rouse rowdy ruddy ruing ruler rusty sapling sadly savvy scald scalp scaly scant scare scarf scary scoff scone scoop scorn scout scour scowl scram scrap scree screw scrub sedan seedy seize selfish serve setup sever shaky shale shawl sheen sheer shelf shell shift shirk shirk shoal shout shrub shrug shrunk siege silky skill skimp skimp skirt skulk slash sleet slept slick slime slimy slosh slump slunk slyly small smash smear smelt smirk smolt snack snail snaky snare snare snarl sniff snort solar solar solar sorry sotto soulful spade spank spare spark sparky spasm spate spawn spear speck spell spelt spend spire spite spoof sport spout spree sprig spunk spurn squad squat squib stain stale stalk stall stamp stank stave stead steam steed steep steer stern stink stoic stoke stomp stony stood stomp stout stove strap straw stray strip strut stunk style sudsy sulky sullen summon sunny sunup super surge sushi swamp swath swear swept swill swirl swoop syrup tabby taffy taint talon tamer tangy tansy tapir taunt tawny taxed terse testy theft thick thine thing think thorn thorny three threw thrum thump tiara tiger tight tilde timed tipsy titan tithe toady toffy topaz torte totem toxic track tramp trawl tread treat trend trial trick tried trill tripe trite tromp troth trout trove truce trump truss tryst tunic turkey turvy tying ulcer unfit unify unity untie unzip upper upset usher usurp utter vague valid valor valve vapid vault vaunt venal venom verge vigil viper viral virgo visor vista vixen vocal vodka voila vouch vowel vulva waffy wager waltz warty waste waver weary weedy weigh weird welch whack wheat where which whiff whirl whisk whole whose wight wince wispy woken woman woody wordy worse worst worst wordy wrath wreak wring wrote writhe yearn zappy zeal".split(" ").filter((w,i,a)=>w.length===5&&a.indexOf(w)===i);
+
+const VALID = new Set(WORDS);
+
+const LAYOUT = [
+  ["q","w","e","r","t","y","u","i","o","p"],
+  ["a","s","d","f","g","h","j","k","l"],
+  ["Enter","z","x","c","v","b","n","m","⌫"]
+];
+
+let target, current, guesses, done;
+
+function init() {
+  target = WORDS[Math.floor(Math.random() * WORDS.length)];
+  current = "";
+  guesses = 0;
+  done = false;
+  buildBoard();
+  buildKeyboard();
+  document.getElementById("overlay").classList.remove("show");
+}
+
+function buildBoard() {
+  const board = document.getElementById("board");
+  board.innerHTML = "";
+  for (let r = 0; r < 6; r++) {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.id = "row-" + r;
+    for (let c = 0; c < 5; c++) {
+      const tile = document.createElement("div");
+      tile.className = "tile";
+      tile.id = `tile-${r}-${c}`;
+      row.appendChild(tile);
+    }
+    board.appendChild(row);
+  }
+}
+
+function buildKeyboard() {
+  const kb = document.getElementById("keyboard");
+  kb.innerHTML = "";
+  LAYOUT.forEach(row => {
+    const div = document.createElement("div");
+    div.className = "kb-row";
+    row.forEach(k => {
+      const btn = document.createElement("button");
+      btn.className = "key" + (k === "Enter" || k === "⌫" ? " wide" : "");
+      btn.textContent = k;
+      btn.dataset.key = k;
+      btn.addEventListener("click", () => handleKey(k));
+      div.appendChild(btn);
+    });
+    kb.appendChild(div);
+  });
+}
+
+function handleKey(k) {
+  if (done) return;
+  if (k === "⌫" || k === "Backspace") {
+    if (current.length > 0) {
+      current = current.slice(0, -1);
+      updateRow();
+    }
+  } else if (k === "Enter") {
+    submitGuess();
+  } else if (/^[a-zA-Z]$/.test(k) && current.length < 5) {
+    current += k.toLowerCase();
+    updateRow();
+  }
+}
+
+function updateRow() {
+  for (let c = 0; c < 5; c++) {
+    const tile = document.getElementById(`tile-${guesses}-${c}`);
+    const letter = current[c] || "";
+    tile.textContent = letter;
+    tile.classList.toggle("filled", letter !== "");
+  }
+}
+
+function submitGuess() {
+  if (current.length < 5) { showToast("Not enough letters"); shakeRow(); return; }
+  if (!VALID.has(current)) { showToast("Not in word list"); shakeRow(); return; }
+
+  const result = score(current, target);
+  revealRow(result, () => {
+    updateKeyColors(current, result);
+    if (current === target) {
+      done = true;
+      const msgs = ["Genius!", "Magnificent!", "Impressive!", "Splendid!", "Great!", "Phew!"];
+      setTimeout(() => {
+        bounceRow();
+        setTimeout(() => showModal(true), 500);
+      }, 200);
+    } else if (guesses === 5) {
+      done = true;
+      setTimeout(() => showModal(false), 400);
+    }
+    guesses++;
+    current = "";
+  });
+}
+
+function score(guess, target) {
+  const result = Array(5).fill("absent");
+  const targetArr = target.split("");
+  const guessArr = guess.split("");
+  const used = Array(5).fill(false);
+  guessArr.forEach((l, i) => {
+    if (l === targetArr[i]) { result[i] = "correct"; used[i] = true; }
+  });
+  guessArr.forEach((l, i) => {
+    if (result[i] === "correct") return;
+    const j = targetArr.findIndex((t, ti) => t === l && !used[ti] && result[ti] !== "correct");
+    if (j !== -1) { result[i] = "present"; used[j] = true; }
+  });
+  return result;
+}
+
+function revealRow(result, cb) {
+  const delay = 300;
+  result.forEach((state, c) => {
+    setTimeout(() => {
+      const tile = document.getElementById(`tile-${guesses}-${c}`);
+      tile.dataset.state = state;
+      tile.classList.add("reveal");
+      tile.style.animationDelay = "0s";
+    }, c * delay);
+  });
+  setTimeout(cb, 5 * delay + 200);
+  result.forEach((_, c) => {
+    const tile = document.getElementById(`tile-${guesses}-${c}`);
+    tile.style.animationDelay = `${c * delay / 1000}s`;
+  });
+}
+
+function updateKeyColors(guess, result) {
+  const priority = { correct: 3, present: 2, absent: 1 };
+  guess.split("").forEach((l, i) => {
+    const btn = document.querySelector(`[data-key="${l}"]`);
+    if (!btn) return;
+    const cur = btn.dataset.state;
+    if (!cur || priority[result[i]] > priority[cur]) btn.dataset.state = result[i];
+  });
+}
+
+function shakeRow() {
+  const row = document.getElementById("row-" + guesses);
+  row.classList.remove("shake");
+  void row.offsetWidth;
+  row.classList.add("shake");
+}
+
+function bounceRow() {
+  for (let c = 0; c < 5; c++) {
+    const tile = document.getElementById(`tile-${guesses - 1}-${c}`);
+    tile.classList.remove("bounce");
+    void tile.offsetWidth;
+    tile.style.animationDelay = `${c * 0.1}s`;
+    tile.classList.add("bounce");
+  }
+}
+
+function showToast(msg, duration = 1600) {
+  const t = document.getElementById("toaster");
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.textContent = msg;
+  t.appendChild(el);
+  setTimeout(() => { el.classList.add("fade"); setTimeout(() => el.remove(), 400); }, duration);
+}
+
+function showModal(won) {
+  document.getElementById("modal-title").textContent = won ? "You Win!" : "Game Over";
+  document.getElementById("modal-msg").textContent = won
+    ? `You solved it in ${guesses} guess${guesses === 1 ? "" : "es"}!`
+    : "Better luck next time.";
+  document.getElementById("modal-answer").textContent = target.toUpperCase();
+  document.getElementById("overlay").classList.add("show");
+}
+
+document.addEventListener("keydown", e => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  handleKey(e.key === "Backspace" ? "⌫" : e.key);
+});
+
+document.getElementById("play-again").addEventListener("click", init);
+
+init();
+</script>
+</body>
+</html>
